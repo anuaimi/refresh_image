@@ -22,6 +22,41 @@ type DockerAuthResponse struct {
 	IssuedAt    string `json:"issued_at"`
 }
 
+type DockerImageInfo struct {
+	Architecture string `json:"architecture"`
+	Features     string `json:"features"`
+	Variant      string `json:"variant"`
+	OS           string `json:"os"`
+	OSFeatures   string `json:"os_features"`
+	OSVersion    string `json:"os_version"`
+	Size         int64  `json:"size"`
+	Status       string `json:"status"`
+	LastPulled   string `json:"last_pulled"`
+	LastPushed   string `json:"last_pushed"`
+}
+
+type DockerImageTag struct {
+	Creator             int               `json:"creator"`
+	ID                  int               `json:"id"`
+	Images              []DockerImageInfo `json:"images"`
+	LastUpdated         string            `json:"last_updated"`
+	LastUpdater         int               `json:"last_updater"`
+	LastUpdaterUsername string            `json:"last_updater_username"`
+	Name                string            `json:"name"`
+	Repository          int               `json:"repository"`
+	FullSize            int               `json:"full_size"`
+	V2                  bool              `json:"v2"`
+	TagStatus           string            `json:"tag_status"`
+	TagLastPulled       string            `json:"tag_last_pulled"`
+	TagLastPushed       string            `json:"tag_last_pushed"`
+}
+
+type DockerTagQueryResults struct {
+	Count   int              `json:"count"`
+	Next    string           `json:"next"`
+	Results []DockerImageTag `json:"results"`
+}
+
 // getAuthToken will request a token from the docker registry
 func getAuthToken() (authToken string, err error) {
 
@@ -88,9 +123,9 @@ func checkDockerHubForImage(cli *client.Client, imageName string) bool {
 }
 
 // getTags will query docker registry to get tags available for an image
-func getTags(imageName string) ([]string, error) {
+func getTags(imageName string) ([]DockerImageTag, error) {
 
-	var tags []string
+	var tags []DockerImageTag
 
 	// if no / add library to front
 	if strings.ContainsAny(imageName, "/") == false {
@@ -102,7 +137,9 @@ func getTags(imageName string) ([]string, error) {
 		return tags, err
 	}
 
-	err = json.NewDecoder(resp.Body).Decode(&tags)
+	var queryResults DockerTagQueryResults
+
+	err = json.NewDecoder(resp.Body).Decode(&queryResults)
 	if err != nil {
 		return tags, err
 	}
