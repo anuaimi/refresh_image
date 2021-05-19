@@ -6,145 +6,18 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
+	"runtime"
 	"strings"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/client"
 )
 
-// DockerAuthResponse has details of response from docker registry auth request
-type DockerAuthResponse struct {
-	Token       string `json:"token"`
-	AccessToken string `json:"access_token"`
-	ExpiresIn   int    `json:"expires_in"`
-	IssuedAt    string `json:"issued_at"`
-}
-
-type DockerImageInfo struct {
-	Architecture string `json:"architecture"`
-	Features     string `json:"features"`
-	Variant      string `json:"variant"`
-	OS           string `json:"os"`
-	OSFeatures   string `json:"os_features"`
-	OSVersion    string `json:"os_version"`
-	Size         int64  `json:"size"`
-	Status       string `json:"status"`
-	LastPulled   string `json:"last_pulled"`
-	LastPushed   string `json:"last_pushed"`
-}
-
-type DockerImageTag struct {
-	Creator             int               `json:"creator"`
-	ID                  int               `json:"id"`
-	Images              []DockerImageInfo `json:"images"`
-	LastUpdated         string            `json:"last_updated"`
-	LastUpdater         int               `json:"last_updater"`
-	LastUpdaterUsername string            `json:"last_updater_username"`
-	Name                string            `json:"name"`
-	Repository          int               `json:"repository"`
-	FullSize            int               `json:"full_size"`
-	V2                  bool              `json:"v2"`
-	TagStatus           string            `json:"tag_status"`
-	TagLastPulled       string            `json:"tag_last_pulled"`
-	TagLastPushed       string            `json:"tag_last_pushed"`
-}
-
-type DockerTagQueryResults struct {
-	Count   int              `json:"count"`
-	Next    string           `json:"next"`
-	Results []DockerImageTag `json:"results"`
-}
-
-// getAuthToken will request a token from the docker registry
-func getAuthToken() (authToken string, err error) {
-
-	// request an auth token
-	resp, err := http.Get("https://auth.docker.io/token?service=registry.docker.io")
-	if err != nil {
-		return "", err
-	}
-
-	// process response
-	var authResults DockerAuthResponse
-	err = json.NewDecoder(resp.Body).Decode(&authResults)
-	if err != nil {
-		return "", err
-	}
-
-	return authResults.Token, err
-}
-
-// validateLogin will check a username and password with docker hub
-func validateLogin(cli *client.Client, username string, password string) (bool, error) {
-
-	// see if we have the right credentials for docker hub
-	authInfo := types.AuthConfig{}
-	authInfo.Username = username
-	authInfo.Password = password
-	// loginInfo, err := cli.RegistryLogin(ctx, authInfo)
-	ctx := context.Background()
-	_, err := cli.RegistryLogin(ctx, authInfo)
-	if err != nil {
-		fmt.Println(err)
-		return false, err
-	}
-
-	return true, err
-}
-
-// checkDockerHubForImage will try and find if image came from docker hub
-func checkDockerHubForImage(cli *client.Client, imageName string) bool {
-
-	// query docker hub
-	ctx := context.Background()
-	searchOptions := types.ImageSearchOptions{}
-	searchOptions.Limit = 100
-	results, err := cli.ImageSearch(ctx, imageName, searchOptions)
-	if err != nil {
-		fmt.Println(err)
-		os.Exit(2)
-	}
-
-	// get lots of partial matches, check each to see if exact match
-	for _, result := range results {
-
-		// look for exact match
-		if strings.Compare(result.Name, imageName) == 0 {
-			// need to get tags!!! and decide if to a pull
-			fmt.Printf("found match for %s\n", imageName)
-			return true
-		}
-	}
-
-	// nope, image not from docker hub
-	return false
-}
-
-// getTags will query docker registry to get tags available for an image
-func getTags(imageName string) ([]DockerImageTag, error) {
-
-	var tags []DockerImageTag
-
-	// if no / add library to front
-	if strings.ContainsAny(imageName, "/") == false {
-		imageName = "library/" + imageName
-	}
-	url := fmt.Sprintf("https://registry.hub.docker.com/v2/repositories/%s/tags?page_size=100", imageName)
-	resp, err := http.Get(url)
-	if err != nil {
-		return tags, err
-	}
-
-	var queryResults DockerTagQueryResults
-
-	err = json.NewDecoder(resp.Body).Decode(&queryResults)
-	if err != nil {
-		return tags, err
-	}
-
-	return tags, err
+// getArchitecture will return the hardware running on
+func getArchitecture() string {
+	// amd64, arm64 are main values
+	return runtime.GOARCH
 }
 
 func main() {
@@ -208,6 +81,11 @@ func main() {
 			continue
 		}
 
+		fmt.Printf("%-25s | %-25s\n",
+			imageName,
+			imageTags,
+		)
+
 		// fmt.Printf("%-25s | %-15s | %s | %-30s\n",
 		// 	imageName,
 		// 	imageTags,
@@ -224,11 +102,34 @@ func main() {
 			// get list of tags for that image
 			tags, err := getTags(imageName)
 			if err != nil {
-				fmt.Println(err)
+				fmt.Printf("could not find tag on docker hub: %s", err)
 				continue
 			}
-			fmt.Println(tags)
 
+			// go through tags
+			for _, localTag := range imageTags {
+
+				// look for matching labels
+				foundTag := false
+				var tagInfo DockerImageTag
+				for _, tag := range tags {
+					fmt.Println(tag.Name)
+					if strings.Compare(localTag, tag.Name) == 0 {
+						fmt.Printf("found matching tag: %s", localTag)
+						foundTag = true
+						tagInfo = tag
+					}
+				}
+				if foundTag {
+					fmt.Println("check if newer image and if so pull")
+					fmt.Println(tagInfo.ID)
+					fmt.Println(getArchitecture())
+					// go through images and find right arch
+				}
+			}
+
+		} else {
+			fmt.Printf("could not find %s on docker hub", imageName)
 		}
 
 		// login
