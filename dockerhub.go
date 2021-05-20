@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -104,6 +105,16 @@ func getTagsForImage(imageName string) ([]DockerImageTag, error) {
 	// can use queryResults.next as is (it has page_size param)
 
 	return queryResults.Results, err
+}
+
+// getImageForArchitecture will find correct image for given architecture
+func getImageForArchitecture(images []DockerImageInfo, arch string) (DockerImageInfo, error) {
+	for _, image := range images {
+		if image.Architecture == arch {
+			return image, nil
+		}
+	}
+	return DockerImageInfo{}, errors.New("could not find image for given architecture")
 }
 
 // pullImage will download the desired docker image

@@ -80,6 +80,7 @@ func main() {
 	}
 
 	// now see what we can find it on docker hub
+	arch := getMachineArchitecture()
 
 	// see if we can find the source image on docker.io
 	found := checkDockerHubForImage(cli, dockerImage)
@@ -96,7 +97,13 @@ func main() {
 		// go through tags
 		for _, tag := range tags {
 			// find image hash
-			fmt.Println("   ", tag.Name)
+			image, err := getImageForArchitecture(tag.Images, arch)
+			if err == nil {
+				imageTimestamp, err := time.Parse(time.RFC3339, image.LastPushed)
+				if err == nil {
+					fmt.Printf("    %-25s %s  created: %s\n", tag.Name, image.Digest[7:19], imageTimestamp.Format("01-02-2006 15:04"))
+				}
+			}
 		}
 	} else {
 		fmt.Printf("could not find %s on docker hub", dockerImage)
