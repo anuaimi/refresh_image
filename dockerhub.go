@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"strings"
@@ -16,6 +18,7 @@ type DockerImageInfo struct {
 	Architecture string `json:"architecture"`
 	Features     string `json:"features"`
 	Variant      string `json:"variant"`
+	Digest       string `json:"digest"`
 	OS           string `json:"os"`
 	OSFeatures   string `json:"os_features"`
 	OSVersion    string `json:"os_version"`
@@ -53,7 +56,8 @@ func checkDockerHubForImage(cli *client.Client, imageName string) bool {
 	// query docker hub
 	ctx := context.Background()
 	searchOptions := types.ImageSearchOptions{}
-	searchOptions.Limit = 100
+	searchOptions.Limit = 50
+	// searchOptions.Limit = 100
 	results, err := cli.ImageSearch(ctx, imageName, searchOptions)
 	if err != nil {
 		fmt.Println(err)
@@ -66,7 +70,7 @@ func checkDockerHubForImage(cli *client.Client, imageName string) bool {
 		// look for exact match
 		if strings.Compare(result.Name, imageName) == 0 {
 			// need to get tags!!! and decide if to a pull
-			fmt.Printf("found match for %s\n", imageName)
+			// fmt.Printf("found match for %s\n", imageName)
 			return true
 		}
 	}
@@ -76,7 +80,7 @@ func checkDockerHubForImage(cli *client.Client, imageName string) bool {
 }
 
 // getTags will query docker registry to get 1st 100 tags available for an image
-func getTags(imageName string) ([]DockerImageTag, error) {
+func getTagsForImage(imageName string) ([]DockerImageTag, error) {
 
 	var queryResults DockerTagQueryResults
 
@@ -84,7 +88,7 @@ func getTags(imageName string) ([]DockerImageTag, error) {
 	if strings.ContainsAny(imageName, "/") == false {
 		imageName = "library/" + imageName
 	}
-	url := fmt.Sprintf("https://registry.hub.docker.com/v2/repositories/%s/tags?page_size=100", imageName)
+	url := fmt.Sprintf("https://registry.hub.docker.com/v2/repositories/%s/tags?page_size=50", imageName)
 	resp, err := http.Get(url)
 	if err != nil {
 		return queryResults.Results, err
@@ -100,4 +104,36 @@ func getTags(imageName string) ([]DockerImageTag, error) {
 	// can use queryResults.next as is (it has page_size param)
 
 	return queryResults.Results, err
+}
+
+// pullImage will download the desired docker image
+func pullImage(cli *client.Client, image string, desiredTag string) error {
+
+	// login
+	var authInfo = ""
+	encodedJSON, err := json.Marshal(authInfo)
+	if err != nil {
+		panic(err)
+	}
+	authStr := base64.URLEncoding.EncodeToString(encodedJSON)
+
+	// pull an image
+	// imageName := "docker.io/library/alpine:latest"
+	options := types.ImagePullOptions{}
+	options.RegistryAuth = authStr
+	ctx := context.Background()
+	dockerImage := image + ":" + desiredTag
+	out, err := cli.ImagePull(ctx, dockerImage, options)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	io.Copy(os.Stdout, out)
+
+	// if _, err := ioutil.ReadAll(out); err != nil {
+	// 	panic(err)
+	// }
+
+	return nil
 }
