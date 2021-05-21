@@ -16,6 +16,7 @@ func main() {
 	}
 	dockerImage := args[1]
 
+	// see what tags we have locally for given image
 	docker := LocalDocker{}
 	err := docker.Init()
 	if err != nil {
@@ -25,9 +26,23 @@ func main() {
 	err = docker.Find(dockerImage)
 	if err != nil {
 		fmt.Println(err)
-		os.Exit(1)
+		os.Exit(2)
 	}
+	// show user list of tags that are local
 	docker.ListTags()
+
+	// get filters for our search on Docker hub
+	oldestTimestamp, err := docker.GetOldestImage()
+	if err != nil {
+		// really shouldn't ever happen as long as we have one image
+		fmt.Println(err)
+		os.Exit(3)
+	}
+	oldestVersion, err := docker.GetMinVersion()
+	if err != nil {
+		// will happen when image tags aren't in semver format
+	}
+	// localTags := docker.GetAllTags()
 
 	// now see what is on Docker Hub
 
@@ -52,7 +67,7 @@ func main() {
 	}
 
 	// display the tags
-	repository.ListTags()
+	repository.ListFilteredTags(oldestTimestamp, *oldestVersion)
 
 	// go through local tags
 	// for _, tag := range allImageTags {

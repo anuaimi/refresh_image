@@ -14,6 +14,7 @@ import (
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/client"
+	"github.com/hashicorp/go-version"
 )
 
 type DockerImageInfo struct {
@@ -162,6 +163,73 @@ func (r *Repository) ListTags() {
 			}
 		}
 	}
+}
+
+// ListFilteredTags will print all tags that match filters
+func (r *Repository) ListFilteredTags(oldestTimestamp time.Time, oldestVersion version.Version) {
+
+	// extract:
+	//   1.15.3-nanoserver
+	//   1.15.3-nanoserver-1809
+	//   1
+	//   1-buster
+	//   1.15-buster
+	//   v4.2.0
+	//   1.0.0
+
+	// don't split
+	//   latest
+	//   slim-buster
+	//   nanoserver-1809
+	//   alpine3.13
+	//   trusty-20191215
+	//   latest-linux-amd64
+
+	// cases:
+	// 1. tag is only numbers and dots
+	// 2. starts with numbers and dots but has alpha text after that
+	// 3. everything else (don't break apart)
+
+	arch := getMachineArchitecture()
+
+	fmt.Println("  Docker Hub:")
+
+	// for each tag
+	for _, tag := range r.tags {
+		// get correct image for our type of machine
+		image, err := getImageForArchitecture(tag.Images, arch)
+		if err == nil {
+			// check timestamp newer
+			imageTimestamp, err := time.Parse(time.RFC3339, image.LastPushed)
+			if err != nil {
+				// bad timestamp
+				continue
+			}
+			if imageTimestamp.Before(oldestTimestamp) {
+				// skip
+				continue
+			}
+
+			// check if semver and if so, is newer than oldest version
+			nullVersion, _ := version.NewVersion("0")
+			if oldestVersion.GreaterThan(nullVersion) {
+				// DO WE NEED TO SPLIT?
+				imageVersion, err := version.NewVersion(tag.Name)
+				if err == nil {
+					// is semver so do the compare
+					if imageVersion.LessThan(&oldestVersion) {
+						//skip
+						continue
+					}
+				}
+			}
+
+			// print
+			fmt.Printf("    %-25s %s  created: %s\n", tag.Name, image.Digest[7:19], imageTimestamp.Format("01-02-2006 15:04"))
+
+		}
+	}
+
 }
 
 // getImageForArchitecture will find correct image for given architecture
