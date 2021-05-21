@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/client"
@@ -51,60 +52,116 @@ type DockerTagQueryResults struct {
 	Results []DockerImageTag `json:"results"`
 }
 
-// checkDockerHubForImage will try and find if image came from docker hub
-func checkDockerHubForImage(cli *client.Client, imageName string) bool {
+type DockerImageTags []DockerImageTag
 
-	// query docker hub
+type Repository struct {
+	name string
+	tags []DockerImageTag
+	cli  *client.Client
+}
+
+// Init will open connection to local docker daemon
+func (r *Repository) Init() error {
+
+	// connect to local docker
+	cli, err := client.NewEnvClient()
+	if err != nil {
+		// does not seem to be running
+		return err
+	}
+	r.cli = cli
+
+	return nil
+}
+
+// Find the given repo on docker hub
+func (r *Repository) Find(name string) error {
+
+	r.name = name
+
+	// search
 	ctx := context.Background()
 	searchOptions := types.ImageSearchOptions{}
-	searchOptions.Limit = 50
-	// searchOptions.Limit = 100
-	results, err := cli.ImageSearch(ctx, imageName, searchOptions)
+	searchOptions.Limit = 100
+	matches, err := r.cli.ImageSearch(ctx, r.name, searchOptions)
 	if err != nil {
-		fmt.Println(err)
-		os.Exit(2)
+		return err
 	}
 
 	// get lots of partial matches, check each to see if exact match
-	for _, result := range results {
-
-		// look for exact match
-		if strings.Compare(result.Name, imageName) == 0 {
-			// need to get tags!!! and decide if to a pull
-			// fmt.Printf("found match for %s\n", imageName)
-			return true
+	for _, match := range matches {
+		if strings.Compare(match.Name, r.name) == 0 {
+			return nil
 		}
 	}
 
-	// nope, image not from docker hub
-	return false
+	// could not find desired image
+	return errors.New("repo does not exist on Docker Hub")
 }
 
-// getTags will query docker registry to get 1st 100 tags available for an image
-func getTagsForImage(imageName string) ([]DockerImageTag, error) {
+// GetTags for a given repository
+func (r *Repository) GetTags() error {
 
 	var queryResults DockerTagQueryResults
 
-	// if no / add library to front
-	if strings.ContainsAny(imageName, "/") == false {
-		imageName = "library/" + imageName
+	// if no '/' add library to front
+	var imageName string
+	if strings.ContainsAny(r.name, "/") == false {
+		imageName = "library/" + r.name
+	} else {
+		imageName = r.name
 	}
-	url := fmt.Sprintf("https://registry.hub.docker.com/v2/repositories/%s/tags?page_size=50", imageName)
+
+	url := fmt.Sprintf("https://registry.hub.docker.com/v2/repositories/%s/tags?page_size=100", imageName)
 	resp, err := http.Get(url)
 	if err != nil {
-		return queryResults.Results, err
+		return err
 	}
 
+	// decode json into golang struct
 	err = json.NewDecoder(resp.Body).Decode(&queryResults)
 	if err != nil {
-		return queryResults.Results, err
+		return err
 	}
 
-	// if there are more than 100 tags, need to loop to get rest
-	// if queryResults.Count > 100, then use queryResults.next as URL to get next 100
-	// can use queryResults.next as is (it has page_size param)
+	if queryResults.Count > 100 {
+		// need to get rest of tags
 
-	return queryResults.Results, err
+		// make channel to get results
+
+		// loop from 100 to count (mod 100)
+		//   can use queryResults.next as is (it has page_size param)
+		//   call go routine to get give page
+		//   go routine passes back using channel
+
+		// we wait until go routines finish or timeout
+		// merge all the results back together
+	}
+
+	r.tags = queryResults.Results
+
+	return nil
+
+}
+
+// ListTags will print all the tags in the repository
+func (r *Repository) ListTags() {
+
+	arch := getMachineArchitecture()
+
+	fmt.Println("  Docker Hub:")
+
+	// for each tag
+	for _, tag := range r.tags {
+		// get correct image for our type of machine
+		image, err := getImageForArchitecture(tag.Images, arch)
+		if err == nil {
+			imageTimestamp, err := time.Parse(time.RFC3339, image.LastPushed)
+			if err == nil {
+				fmt.Printf("    %-25s %s  created: %s\n", tag.Name, image.Digest[7:19], imageTimestamp.Format("01-02-2006 15:04"))
+			}
+		}
+	}
 }
 
 // getImageForArchitecture will find correct image for given architecture

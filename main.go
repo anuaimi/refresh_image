@@ -1,15 +1,8 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"os"
-	"strings"
-	"time"
-
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/filters"
-	"github.com/docker/docker/client"
 )
 
 func main() {
@@ -23,90 +16,56 @@ func main() {
 	}
 	dockerImage := args[1]
 
-	// try and connect to docker
-	cli, err := client.NewEnvClient()
-	if err != nil {
-		// does not seem to be running
-		fmt.Println(err)
-		os.Exit(1)
-	}
-
-	// get list of local images
-	listFilters := filters.NewArgs()
-	listFilters.Add("reference", dockerImage)
-	ctx := context.Background()
-	// images, err := cli.ImageList(ctx, types.ImageListOptions{Filters: listFilters, All: false})
-	images, err := cli.ImageList(ctx, types.ImageListOptions{Filters: listFilters})
+	docker := LocalDocker{}
+	err := docker.Init()
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
 	}
+	err = docker.Find(dockerImage)
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+	docker.ListTags()
 
-	if len(images) == 0 {
-		fmt.Printf("no local images match: %s", dockerImage)
-		os.Exit(4)
+	// now see what is on Docker Hub
+
+	repository := Repository{}
+	err = repository.Init()
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
 	}
 
-	// go through each image
-	var allImageTags []string
-
-	fmt.Println("Checking for ", dockerImage, ":")
-	fmt.Println("  Local:")
-	for _, image := range images {
-
-		// see when image was created
-		var imageTags []string
-		imageCreated := time.Unix(image.Created, 0)
-
-		// get name from the tags, which is actually name:tag (ie node:latest)
-		for _, tag := range image.RepoTags {
-
-			// note may have several images for a specific project
-			// python:3-7 & python:3.7-slim
-
-			tagParts := strings.SplitN(tag, ":", 2)
-			imageTags = append(imageTags, tagParts[1])
-			allImageTags = append(allImageTags, tagParts[1])
-		}
-
-		// ignore images that are unlabeled
-		// if strings.Compare(imageName, "<none>") == 0 {
-		// 	continue
-		// }
-
-		if len(imageTags) > 0 {
-			fmt.Printf("    %-25s %s  created: %s\n", imageTags[0], image.ID[7:19], imageCreated.Format("01-02-2006 15:04"))
-		}
+	// check Docker Hub for repo we desire
+	err = repository.Find(dockerImage)
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
 	}
 
-	// now see what we can find it on docker hub
-	arch := getMachineArchitecture()
-
-	// see if we can find the source image on docker.io
-	found := checkDockerHubForImage(cli, dockerImage)
-	if found {
-
-		// get list of tags for that image
-		tags, err := getTagsForImage(dockerImage)
-		if err != nil {
-			fmt.Printf("could not find tag on docker hub: %s", err)
-			// continue
-		}
-
-		fmt.Println("  Docker Hub:")
-		// go through tags
-		for _, tag := range tags {
-			// find image hash
-			image, err := getImageForArchitecture(tag.Images, arch)
-			if err == nil {
-				imageTimestamp, err := time.Parse(time.RFC3339, image.LastPushed)
-				if err == nil {
-					fmt.Printf("    %-25s %s  created: %s\n", tag.Name, image.Digest[7:19], imageTimestamp.Format("01-02-2006 15:04"))
-				}
-			}
-		}
-	} else {
-		fmt.Printf("could not find %s on docker hub", dockerImage)
+	err = repository.GetTags()
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
 	}
+
+	// display the tags
+	repository.ListTags()
+
+	// go through local tags
+	// for _, tag := range allImageTags {
+
+	// 	// if 'latest' see if digest & date the same
+	// 	// look for exact match - see if digest the same
+
+	// 	// just the tag no digest
+	// 	tag, err := repository.FindTag(tag)
+	// 	if err != nil {
+	// 		// is it newer?
+	// 	}
+
+	// }
 
 }
