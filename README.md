@@ -7,7 +7,7 @@ When you call `refresh_image`, you give it the image you want tag infor for.  It
 Below you can see the results for the `alpine` image.  You can see that there are two local tags and that Docker Hub has a few newer ones.  You can now easily issue a `docker pull` with whatever new tag you want to download
 
 ```bash
-$ ./refresh_images alpine
+$ ./refresh_image alpine
   Local Images:
     latest                    6dbb9cc54074  created: 04-14-2021 15:19
     3.13                      28f6e2705743  created: 02-17-2021 16:19
